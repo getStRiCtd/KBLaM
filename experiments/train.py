@@ -22,13 +22,15 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 from rich.theme import Theme
-from torch.nn import CrossEntropyLoss
 from transformers import AutoTokenizer
+
+from torch.nn import CrossEntropyLoss
 
 from kblam.kb_encoder import KBEncoder
 from kblam.models.kblam_config import KBLaMConfig
 from kblam.models.llama3_model import KblamLlamaForCausalLM
 from kblam.models.phi3_model import KBLaMPhi3ForCausalLM
+from kblam.models.qwen_model import KBLaMQwen2ForCausalLM
 from kblam.utils.data_utils import (
     augment_row,
     generate_multi_entity_qa,
@@ -82,7 +84,7 @@ parser.add_argument("--use_data_aug", action="store_true", help="Randomly pick t
 parser.add_argument("--use_lr_decay", action="store_true")
 parser.add_argument("--dataset_dir", type=str, default="synthetic_data")
 parser.add_argument("--model_dir_to_resume", type=str, default=None, help="Checkpoint directory to resume training")
-parser.add_argument("--hf_model_spec", type=str, default="meta-llama/Llama-3.2-1B-Instruct", choices=["meta-llama/Meta-Llama-3-8B", "microsoft/Phi-3-mini-4k-instruct", "meta-llama/Llama-3.2-1B-Instruct"])
+parser.add_argument("--hf_model_spec", type=str, default="meta-llama/Llama-3.2-1B-Instruct", choices=["meta-llama/Meta-Llama-3-8B", "microsoft/Phi-3-mini-4k-instruct", "meta-llama/Llama-3.2-1B-Instruct", "Qwen/Qwen2-0.5B-Instruct"])
 parser.add_argument("--hf_token", type=str,default=None,help="Huggingface token")
 parser.add_argument("--model_save_dir", type=str, default="output", help="Place to save the checkpoints")
 parser.add_argument("--kb_size", type=int, default=None, help="The size of the KB set size")
@@ -96,7 +98,7 @@ parser.add_argument("--kb_token_layer_frequency", type=int, default=3, help="Int
 parser.add_argument("--gradient_accm_step", type=int, default=20, help="Introduce QA with extended open-ended parts")
 parser.add_argument("--verbose", action="store_true", help="Set logging to debug")
 parser.add_argument("--log_to_file", action="store_true", help="Log to file as well as stdout")
-parser.add_argument("--llm_type",type=str,default="llama3",choices=["llama3", "phi3"])
+parser.add_argument("--llm_type",type=str,default="llama3",choices=["llama3", "phi3","qwen"])
 # fmt: on
 
 
@@ -157,6 +159,9 @@ def _format_QA_llama(Q: str, A: str):
 def _format_QA_phi3(Q: str, A: str):
     return "<|user|>\n" + Q + "<|end|>\n" + "<|assistant|>\n" + A + "<|end|>\n"
 
+def _format_QA_qwen(Q: str, A: str):
+    return "<|user|>\n" + Q + "<|end|>\n" + "<|assistant|>\n" + A + "<|end|>\n"
+
 
 def _create_labels_for_llama(input_ids: torch.Tensor, input_strs: List[str], tokenizer):
     # Not sure this is correct. This method simply masks the <|start_header_id|>user<|end_header_id|> then leaves the rest in the labels
@@ -191,6 +196,16 @@ def _create_labels_for_phi3(input_ids: torch.Tensor, input_strs: List[str], toke
     labels = input_ids * answer_mask + (1 - answer_mask) * (-100)
     return labels
 
+def _create_labels_for_qwen2(input_ids: torch.Tensor, input_strs: List[str], tokenizer):
+    answer_indices = torch.argmax(
+        (input_ids == tokenizer("<|user|>")["input_ids"][0]).long(),
+        -1,
+    )
+    answer_mask = torch.ones_like(input_ids)
+    for b in range(len(input_strs)):
+        answer_mask[b, : (answer_indices[b].item() + 1)] = 0
+    labels = input_ids * answer_mask + (1 - answer_mask) * (-100)
+    return labels
 
 def get_batch(
     qa_format_func: Callable[[str, str], str],
@@ -541,6 +556,10 @@ class Trainer:
                 get_batch, _format_QA_llama, _create_labels_for_llama
             )
             self._get_params = _get_llama3_query_head_parameters
+        elif isinstance(llm_model, KBLaMQwen2ForCausalLM):
+            self._get_batch = partial(
+                get_batch, _format_QA_qwen, _create_labels_for_qwen2
+            )
         else:
             raise ValueError(f"{llm_model} not recognised")
 
@@ -808,6 +827,13 @@ def main():
             device_map=device,
             torch_dtype="auto",
             trust_remote_code=True,
+        )
+    elif args.llm_type == "qwen":
+        model = KBLaMQwen2ForCausalLM.from_pretrained(
+            llm_model_spec,
+            device_map=device,
+            torch_dtype="auto",
+            trust_remote_code=True
         )
     else:
         ValueError(f"LLM type {args.llm_type} not recognised")
