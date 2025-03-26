@@ -19,7 +19,7 @@ import copy
 import math
 import os
 import warnings
-from typing import List, Optional, Tuple, Union, Unpack, TypedDict
+from typing import List, Optional, Tuple, Union, TypedDict
 
 import numpy as np
 import torch
@@ -559,7 +559,6 @@ class Qwen2DecoderLayer(nn.Module):
         save_attention_weights: bool = False,
         attention_save_loc: Optional[str] = None,
         attention_file_base_name: Optional[str] = None,
-        **kwargs: Unpack[FlashAttentionKwargs],
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         residual = hidden_states
 
