@@ -63,7 +63,8 @@ def compute_embeddings(
 if __name__ == "__main__":
     args = parser_args()
     with open(args.dataset_path, "r") as file:
-        dataset = [DataPoint(**json.loads(line)) for line in file]
+        data = json.loads(next(file))
+        dataset = [DataPoint(**data_sample) for data_sample in data]
 
     if args.model_name == "all-MiniLM-L6-v2":
         key_embeds = compute_embeddings(args.model_name, dataset, "key_string")
