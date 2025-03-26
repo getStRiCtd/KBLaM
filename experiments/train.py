@@ -273,7 +273,8 @@ def get_prefix_str(args):
 
     duplicate_true_kb = args.duplicate_true_kb
     length_invariance = args.length_invariance
-    outlier_ratio = args.outlier_ratio
+    # TODO: outlier
+    outlier_ratio = -1
     use_outlier = outlier_ratio != -1
     multi_entities = args.multi_entities
     use_extended_qa = args.use_extended_qa
@@ -683,6 +684,8 @@ def main():
     args = parser.parse_args()
     if torch.cuda.is_available():
         device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
 
     if args.verbose:
         logger.setLevel(logging.DEBUG)
